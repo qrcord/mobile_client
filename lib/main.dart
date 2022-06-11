@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -51,12 +53,85 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   String _lastTxt = "";
-  String _respo = "";
+  bool _serverOk = false;
+  bool _serverChecking = false;
+  Timer? _serverFieldTimerChk;
+  TextEditingController serverFieldController = TextEditingController();
+
+  @override
+  void dispose() {
+    _serverFieldTimerChk?.cancel();
+    serverFieldController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    serverFieldController.addListener(_onServerAddrFieldUpdate);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+        appBar: AppBar(
+          title: const Text("QRCord"),
+        ),
+        body: Center(
+          // Center is a layout widget. It takes a single child and positions it
+          // in the middle of the parent.
+          child: Column(
+            // Column is also a layout widget. It takes a list of children and
+            // arranges them vertically. By default, it sizes itself to fit its
+            // children horizontally, and tries to be as tall as its parent.
+            //
+            // Column has various properties to control how it sizes itself and
+            // how it positions its children. Here we use mainAxisAlignment to
+            // center the children vertically; the main axis here is the vertical
+            // axis because Columns are vertical (the cross axis would be
+            // horizontal).
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Text(['Let\'s scan!', "You just scanned $_lastTxt"].join('\n')),
+              Padding(padding: const EdgeInsets.symmetric(horizontal: 48), child: Row(
+                    children: [
+                      Expanded(child: TextField(
+                          controller: serverFieldController,
+                          decoration: const InputDecoration(
+                            border: UnderlineInputBorder(),
+                            labelText: 'Server address',
+                          ))),
+                      TextButton.icon(
+                          onPressed: () {
+                            serverFieldController.clear();
+                          },
+                          icon: const Icon(
+                            Icons.backspace,
+                            color: Colors.grey,
+                          ),
+                          label: const Text(
+                            "CLEAR",
+							style: TextStyle(color: Colors.grey),
+							textScaleFactor: 0.75
+                          ))
+                    ],
+                  )),
+              ElevatedButton(
+                onPressed: (!_serverChecking && _serverOk)
+                    ? () {
+                        _scanBarcode(context);
+                      }
+                    : null,
+                child: const Text('Scan'),
+              ),
+            ],
+          ),
+        ));
+  }
 
   Future<void> onBarcode(String data) async {
-    print('on barcode step');
-    var response = await http.post(
-        Uri(host: '192.168.1.200', port: 8000, scheme: 'https', path: '/'),
+    await http.post(
+        Uri(host: '192.168.1.200', port: 8000, scheme: 'http', path: '/'),
         body: data,
         headers: {
           'Content-Type': 'application/text'
@@ -69,66 +144,17 @@ class _MyHomePageState extends State<MyHomePage> {
       // _counter without calling setState(), then the build method would not be
       // called again, and so nothing would appear to happen.
       _lastTxt = data;
-      _respo = response.body;
     });
   }
 
-  @override
-  Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-        appBar: AppBar(
-          // Here we take the value from the MyHomePage object that was created by
-          // the App.build method, and use it to set our appbar title.
-          title: const Text("QRCord"),
-        ),
-        body: Center(
-          // Center is a layout widget. It takes a single child and positions it
-          // in the middle of the parent.
-          child: Column(
-            // Column is also a layout widget. It takes a list of children and
-            // arranges them vertically. By default, it sizes itself to fit its
-            // children horizontally, and tries to be as tall as its parent.
-            //
-            // Invoke "debug painting" (press "p" in the console, choose the
-            // "Toggle Debug Paint" action from the Flutter Inspector in Android
-            // Studio, or the "Toggle Debug Paint" command in Visual Studio Code)
-            // to see the wireframe for each widget.
-            //
-            // Column has various properties to control how it sizes itself and
-            // how it positions its children. Here we use mainAxisAlignment to
-            // center the children vertically; the main axis here is the vertical
-            // axis because Columns are vertical (the cross axis would be
-            // horizontal).
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: <Widget>[
-              Text([
-                'Let\'s scan!',
-                "You just scanned $_lastTxt",
-                "Last time, the server said: $_respo"
-              ].join('\n')),
-              const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 128, vertical: 8),
-                  child: TextField(
-                      decoration: InputDecoration(
-                    border: UnderlineInputBorder(),
-                    labelText: 'Server address',
-                  ))),
-              ElevatedButton(
-                child: const Text('Scan'),
-                onPressed: () {
-                  print('Request to link oop');
-                  _scanBarcode(context);
-                },
-              )
-            ],
-          ),
-        ));
+  void _onServerAddrFieldUpdate() {
+    setState(() {
+      _serverChecking = true;
+    });
+    _serverFieldTimerChk?.cancel();
+    _serverFieldTimerChk = Timer(const Duration(milliseconds: 650), () {
+      _checkServer();
+    });
   }
 
   Future<void> _scanBarcode(BuildContext context) async {
@@ -138,6 +164,23 @@ class _MyHomePageState extends State<MyHomePage> {
     );
 
     onBarcode(result);
+  }
+
+  Future<void> _checkServer() async {
+    try {
+      await http
+          .get(Uri.parse(serverFieldController.text))
+          .timeout(const Duration(milliseconds: 3250));
+      setState(() {
+        _serverOk = true;
+        _serverChecking = false;
+      });
+    } catch (e) {
+      setState(() {
+        _serverOk = false;
+        _serverChecking = false;
+      });
+    }
   }
 }
 
